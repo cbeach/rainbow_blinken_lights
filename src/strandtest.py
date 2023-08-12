@@ -5,10 +5,24 @@
 # Direct port of the Arduino NeoPixel library strandtest example.  Showcases
 # various animations on a strip of NeoPixels.
 
-from contextlib import contextmanager
-from unittest.mock import Mock, patch
-import time
 import argparse
+from contextlib import contextmanager
+from copy import copy
+import os
+import sys
+import time
+from typing import List, Protocol
+from unittest.mock import Mock, patch
+
+
+from advanced_blinken.color import Color
+from advanced_blinken.strand import Strand
+
+class AniInitFunc(Protocol):
+    def __call__(self, i: int, strip: List[Color]) -> Color: ...
+
+class AniTransFunc(Protocol):
+    def __call__(self, i: int, strip: List[Color], init: bool = False) -> Color: ...
 
 # LED strip configuration:
 LED_COUNT = 450        # Number of LED pixels.
@@ -28,6 +42,14 @@ def colorWipe(strip, color, wait_ms=50):
         strip.setPixelColor(i, color)
         strip.show()
         time.sleep(wait_ms / 1000.0)
+
+
+# Define functions which animate LEDs in various ways.
+def quickWipe(strip, color):
+    """Wipe color across display a pixel at a time."""
+    for i in range(strip.numPixels()):
+        strip.setPixelColor(i, color)
+    strip.show()
 
 
 def theaterChase(strip, color, wait_ms=50, iterations=10):
@@ -61,17 +83,6 @@ def rainbow(strip, wait_ms=20, iterations=1):
             strip.setPixelColor(i, wheel((i + j) & 255))
         strip.show()
         time.sleep(wait_ms / 1000.0)
-
-
-def rainbowCycle(strip, wait_ms=20, iterations=5):
-    """Draw rainbow that uniformly distributes itself across all pixels."""
-    for j in range(256 * iterations):
-        for i in range(strip.numPixels()):
-            strip.setPixelColor(i, wheel(
-                (int(i * 256 / strip.numPixels()) + j) & 255))
-        strip.show()
-        time.sleep(wait_ms / 1000.0)
-
 
 def theaterChaseRainbow(strip, wait_ms=50):
     """Rainbow movie theater light style chaser animation."""
@@ -117,23 +128,80 @@ def old_main():
 
     except KeyboardInterrupt:
         if args.clear:
-            colorWipe(strip, Color(0, 0, 0), 10)
+            quickWipe(strip, Color(0, 0, 0), 10)
+
+def working_basic_loop():
+    strand = Strand(os.get_terminal_size().columns)
+    pixel_ref = [Color(_h=i, _s=250, _v=250) for i in range(len(rgb_strand))]
+
+    while True:
+        for i in range(len(strand)):
+            if pixel_ref[i].h == 255:
+                pixel_ref[i].h = 0
+            else:
+                pixel_ref[i].h += 1
+            strand.setPixelColorRGB(i, *(pixel_ref[i].rgb))
+        #print([i.h for i in pixel_ref], end='\r')
+        strand.show()
+
+        time.sleep(.01)
 
 
-def main():
-    mock = Mock()
-    with patch.dict('sys.modules', {'rpi_ws281x': mock}):
-        import rpi_ws281x
+class Animations:
+    class Initialization:
+        @staticmethod
+        def rainbow(i: int, strip: List[Color]):
+            color = Color(_h=i, _s=255, _v=255)
+            return color
 
-    from advanced_blinken.color import Color, ColorSpace
-    from advanced_blinken.strand import Strand
+    class Transformation:
+        @staticmethod
+        def identity(pixel):
+            return pixel
 
-    rgb_strand = Strand(2)
-    rgb_strand.fill((1, 2, 3), ColorSpace.RGB)
-    rgb_strand.fill((1, 2, 3), ColorSpace.HSV)
-    print(Color.black)
+        @staticmethod
+        def cycle_hue(pixel):
+            return Color(pixel)
+
+    @staticmethod
+    def rainbowCycle(i: int, strip: List[Color], init: bool = False) -> Color:
+        if init is True:
+            Animations.Initialization.rainbow(i, strip)
+        h, s, v = strip[i].hsv
+        hp = h + 1 if h < 255 else 0
+        color = Color(_hsv=(hp, s, v))
+        return color
+
+    @staticmethod
+    def chase(init_func: AniInitFunc, transformation: AniTransFunc = Transformation.identity, step_length: int = 1, smooth: bool = False):
+        def initialized_chase(i, strip, init=False):
+            if init is True:
+                return init_func(i, strip)
+            if i + step_length >= len(strip):
+                j = i + step_length - len(strip)
+            else:
+                j = i + step_length
+            return transformation(strip[j])
+        return initialized_chase
+
+
+def mainRainbowCycle():
+    strand = Strand(os.get_terminal_size().columns)
+    strand.transition_function = Animations.rainbowCycle
+    strand.loop()
+
+
+def mainChase():
+    strand = Strand(os.get_terminal_size().columns)
+    def chase_init(i, strip):
+        return Color.white if i == 0 else Color.black
+    strand.transition_function = Animations.chase(chase_init)
+    strand.show()
+    strand.loop()
+
 
 
 # Main program logic follows:
 if __name__ == '__main__':
-    main()
+    #working_basic_loop()
+    mainChase()
