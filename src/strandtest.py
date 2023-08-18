@@ -17,12 +17,7 @@ from unittest.mock import Mock, patch
 
 from advanced_blinken.color import Color
 from advanced_blinken.strand import Strand
-
-class AniInitFunc(Protocol):
-    def __call__(self, i: int, strip: List[Color]) -> Color: ...
-
-class AniTransFunc(Protocol):
-    def __call__(self, i: int, strip: List[Color], init: bool = False) -> Color: ...
+from advanced_blinken.animations import Animations
 
 # LED strip configuration:
 LED_COUNT = 450        # Number of LED pixels.
@@ -33,6 +28,16 @@ LED_DMA = 10          # DMA channel to use for generating signal (try 10)
 LED_BRIGHTNESS = 255  # Set to 0 for darkest and 255 for brightest
 LED_INVERT = False    # True to invert the signal (when using NPN transistor level shift)
 LED_CHANNEL = 0       # set to '1' for GPIOs 13, 19, 41, 45 or 53
+
+import sh
+from sh import grep
+MOCK = False
+n = os.get_terminal_size().columns
+try:
+    grep('-i', 'raspbian', '/etc/os-release').lower()
+    n = LED_COUNT
+except sh.ErrorReturnCode as ex:
+    pass
 
 
 # Define functions which animate LEDs in various ways.
@@ -146,63 +151,22 @@ def working_basic_loop():
 
         time.sleep(.01)
 
-
-class Animations:
-    class Initialization:
-        @staticmethod
-        def rainbow(i: int, strip: List[Color]):
-            color = Color(_h=i, _s=255, _v=255)
-            return color
-
-    class Transformation:
-        @staticmethod
-        def identity(pixel):
-            return pixel
-
-        @staticmethod
-        def cycle_hue(pixel):
-            return Color(pixel)
-
-    @staticmethod
-    def rainbowCycle(i: int, strip: List[Color], init: bool = False) -> Color:
-        if init is True:
-            return Animations.Initialization.rainbow(i, strip)
-        h, s, v = strip[i].hsv
-        hp = h + 1 if h < 255 else 0
-        color = Color(_hsv=(hp, s, v))
-        return color
-
-    @staticmethod
-    def chase(init_func: AniInitFunc, transformation: AniTransFunc = Transformation.identity, step_length: int = 1, smooth: bool = False):
-        def initialized_chase(i, strip, init=False):
-            if init is True:
-                return init_func(i, strip)
-            if i + step_length >= len(strip):
-                j = i + step_length - len(strip)
-            else:
-                j = i + step_length
-            return transformation(strip[j])
-        return initialized_chase
-
-
-def mainRainbowCycle():
-    strand = Strand(os.get_terminal_size().columns)
-    strand.transition_function = Animations.rainbowCycle
-    strand.loop()
-
-
-def mainChase():
-    strand = Strand(os.get_terminal_size().columns)
-    def chase_init(i, strip):
-        return Color.white if i == 0 else Color.black
-    strand.transition_function = Animations.chase(chase_init)
+def main(n, transformation):
+    strand = Strand(n)
+    strand.transition_function = transformation
     strand.show()
     strand.loop()
-
-
 
 # Main program logic follows:
 if __name__ == '__main__':
     #working_basic_loop()
-    #mainRainbowCycle()
-    mainChase()
+    #genericMain()
+    #mainChase()
+    #mainPixelChase()
+    #mainRainbowChase()
+    #main(n, Animations.rainbow_cycle)
+    #main(n, Animations.chase(lambda i, _: Color.white if i == 0 else Color.black))
+    #main(n, Animations.pixel_chase(Color.cyan))
+    #main(n, Animations.rainbow_chase())
+    #main(n, Animations.sparkle(n, probability=.01, decay_rate=.8))
+    main(n, Animations.rainbow_sparkle(n, probability=.01, decay_rate=.25))
