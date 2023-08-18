@@ -166,7 +166,7 @@ class Animations:
     @staticmethod
     def rainbowCycle(i: int, strip: List[Color], init: bool = False) -> Color:
         if init is True:
-            Animations.Initialization.rainbow(i, strip)
+            return Animations.Initialization.rainbow(i, strip)
         h, s, v = strip[i].hsv
         hp = h + 1 if h < 255 else 0
         color = Color(_hsv=(hp, s, v))
@@ -204,4 +204,5 @@ def mainChase():
 # Main program logic follows:
 if __name__ == '__main__':
     #working_basic_loop()
+    #mainRainbowCycle()
     mainChase()
